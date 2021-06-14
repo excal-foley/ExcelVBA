@@ -1,0 +1,163 @@
+Attribute VB_Name = "config"
+Option Explicit
+#Const EarlyBinding = True
+
+Sub ListReferences()
+    'create a variable to refer to each reference
+    Dim ref As Reference
+
+    'list out all of the current references
+    For Each ref In Application.VBE.ActiveVBProject.References
+        Debug.Print ref.Name, ref.FullPath, ref.GUID, ref.BuiltIn, ref.IsBroken, ref.Major, ref.Minor
+    Next ref
+
+End Sub
+
+
+Sub Script2Modules()
+#If EarlyBinding = True Then  'Verweis notwendig!
+    Dim Regex As RegExp
+    Set Regex = New RegExp
+#Else
+    Dim Regex As Object
+    Set Regex = CreateObject("VBScript.RegExp")
+#End If
+
+
+Dim strDir As String, strFile As String, strFileName As String, strFileType As String, strVBACode As String
+Dim Modules As VBComponents, Modul As VBComponent
+
+Set Modules = ThisWorkbook.VBProject.VBComponents
+
+Regex.MultiLine = True
+'Regex.Global = True
+
+strDir = ThisWorkbook.Path & "\scripts\"
+strFileType = ".vbs"
+
+strFile = Dir$(strDir & "*" & strFileType)
+Do While strFile <> ""
+
+    strFileName = Replace(strFile, strFileType, "")
+    
+    Set Modul = Modules(strFileName)
+    
+    strVBACode = FileVBS2VBA(strDir & strFile)
+    
+    Modul.CodeModule.DeleteLines 1, Modul.CodeModule.CountOfLines
+    Modul.CodeModule.InsertLines 1, strVBACode
+    
+    strFile = Dir$()
+Loop
+
+
+End Sub
+Sub GFkjb()
+Debug.Print InsertMain("C:\Users\Stefan\Desktop\VBScript\scripts\Modul.vbs")
+End Sub
+
+Function FileVBS2VBA(File As String) As String
+#If EarlyBinding = True Then  'Verweis notwendig!
+    Dim Regex As RegExp
+    Set Regex = New RegExp
+#Else
+    Dim Regex As Object
+    Set Regex = CreateObject("VBScript.RegExp")
+#End If
+
+    Dim strZeile As String
+    Dim isInProc As Boolean, isDim As Boolean, isMain As Boolean
+    
+    'Regex.MultiLine = True
+    
+    Close #1
+    Open File For Input As #1
+    Do While Not EOF(1)
+        Line Input #1, strZeile
+        
+        Regex.Pattern = "^ *(Public|Private|)(Sub|Function) "
+        isInProc = isInProc Or Regex.Test(strZeile)
+        
+        Regex.Pattern = "^ *(Dim|Const|Static|Option) "
+        isDim = Regex.Test(strZeile)
+        
+        If Not isInProc And Not isDim And Not isMain And strZeile <> "" Then
+            isMain = True
+            FileVBS2VBA = FileVBS2VBA & "Sub Main()" & vbNewLine
+        ElseIf isInProc And isMain Then
+            isMain = False
+            Regex.Pattern = "([\w\W]*[^\n])((\r\n)*)$"
+            FileVBS2VBA = Regex.Replace(FileVBS2VBA, "$1" & vbNewLine & "End Sub" & "$2")
+        End If
+        
+        FileVBS2VBA = FileVBS2VBA & strZeile & vbNewLine
+        
+        Regex.Pattern = "^ *End (Sub|Function) "
+        isInProc = isInProc And Not Regex.Test(strZeile)
+    Loop
+    
+    Close #1    ' Datei schließen
+End Function
+
+
+Function getStrTxt(File As String) As String
+Dim fso As Object, objFile As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set objFile = fso.OpenTextFile(File, 1)
+    getStrTxt = objFile.readall
+    objFile.Close
+End Function
+Function getArrTxt(File As String) As String()
+    getArrTxt = Split(getStrTxt(File), vbNewLine)
+End Function
+
+
+Sub Modules2Script()
+#If EarlyBinding = True Then  'Verweis notwendig!
+    Dim Regex As RegExp
+    Set Regex = New RegExp
+#Else
+    Dim Regex As Object
+    Set Regex = CreateObject("VBScript.RegExp")
+#End If
+
+Dim strFilePath As String, strDir As String, strFileName As String, strFileType As String, strVBACode As String
+Dim Modules As VBComponents, Modul As VBComponent
+Dim strNotepad As String
+
+Set Modules = ThisWorkbook.VBProject.VBComponents
+
+Regex.MultiLine = True
+
+strNotepad = Environ("WINDIR") & "\Notepad.exe"
+strDir = ThisWorkbook.Path & "\scripts\"
+strFileType = ".vbs"
+
+For Each Modul In Modules
+    If Modul.Type = 1 And Modul.Name <> "config" Then
+    
+        strFileName = Modul.Name
+        strFilePath = strDir & strFileName & strFileType
+        
+        strVBACode = getVBACode(Modul)
+        
+        Regex.Pattern = "Sub Main\(\)\r\n([\d\D]*?)\r\nEnd Sub"
+        strVBACode = Regex.Replace(strVBACode, "$1")
+
+        If Dir(strDir, vbDirectory) = "" Then MkDir strDir
+        Open strFilePath For Output As #1
+            Print #1, strVBACode
+        Close #1
+        
+        ' Open File in Notepad
+        Shell strNotepad & " " & strFilePath, vbNormalFocus
+    
+    End If
+Next Modul
+
+End Sub
+Private Function getVBACode(Modul As Object) As String
+    Dim lngLineCount As Long
+    lngLineCount = Modul.CodeModule.CountOfLines
+    getVBACode = Module.CodeModule.Lines(1, lngLineCount)
+End Function
